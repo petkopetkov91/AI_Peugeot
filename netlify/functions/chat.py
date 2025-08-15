@@ -19,10 +19,10 @@ if not api_key or not assistant_id:
     raise ValueError("OPENAI_API_KEY and OPENAI_ASSISTANT_ID must be set in Netlify's environment variables.")
 
 client = OpenAI(api_key=api_key)
+# Създаваме Flask приложението в корена, без допълнителен /chat път
 app = Flask(__name__)
 CORS(app)
 
-# ... (всички ваши функции като parse_price и get_available_cars остават същите) ...
 def parse_price(price_str):
     if not price_str: return float('inf')
     match = re.search(r'([\d\s,]+)\s*лв', price_str)
@@ -63,8 +63,8 @@ def get_available_cars(model_filter=None):
         summary = "Възникна грешка при извличането на данните за автомобили."
         return {"summary": summary, "cars": []}
 
-@app.route('/chat', methods=['POST'])
-def chat():
+@app.route('/', methods=['POST'])
+def chat_handler():
     try:
         data = request.json
         thread_id = data.get("thread_id")
@@ -96,11 +96,11 @@ def chat():
             response_text = messages.data[0].content[0].text.value
             return jsonify({"response": response_text, "thread_id": thread_id})
         else:
-            return jsonify({"response": f"Грешка: Обработката спря със статус '{run.status}'.", "thread_id": thread_id})
+            return jsonify({"response": f"Грешка: Обработката спря със статус '{run.status}'."})
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": f"Възникна критична грешка на сървъра: {e}"}), 500
 
 def handler(event, context):
-    """Entry point for the Netlify Function."""
+    """Entry point for the Netlify Function that wraps the Flask app."""
     return serverless_handle(app, event, context)
