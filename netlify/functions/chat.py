@@ -7,11 +7,9 @@ import json
 import traceback
 import re
 
-# Променливите се зареждат от настройките на Netlify UI
 api_key = os.environ.get("OPENAI_API_KEY")
 assistant_id = os.environ.get("OPENAI_ASSISTANT_ID")
 
-# Проверка дали променливите са зададени
 if not api_key or not assistant_id:
     raise ValueError("OPENAI_API_KEY and OPENAI_ASSISTANT_ID must be set in Netlify's environment variables.")
 
@@ -58,49 +56,38 @@ def get_available_cars(model_filter=None):
         return {"summary": summary, "cars": []}
 
 def handler(event, context):
-    """This is the main entry point for the Netlify Function."""
     if event['httpMethod'] != 'POST':
         return {'statusCode': 405, 'body': json.dumps({'error': 'Method Not Allowed'})}
-
     try:
         body = json.loads(event['body'])
         thread_id = body.get("thread_id")
         user_message = body.get("message")
-
         if not thread_id:
             thread = client.beta.threads.create()
             thread_id = thread.id
-
         client.beta.threads.messages.create(thread_id=thread_id, role="user", content=user_message)
         run = client.beta.threads.runs.create(assistant_id=assistant_id, thread_id=thread_id)
-
         while run.status in ['queued', 'in_progress', 'requires_action']:
             run = client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run.id)
-            
             if run.status == 'requires_action':
                 tool_call = run.required_action.submit_tool_outputs.tool_calls[0]
                 if tool_call.function.name == "get_available_cars":
                     arguments = json.loads(tool_call.function.arguments)
                     model_name = arguments.get('model_filter')
                     car_data_result = get_available_cars(model_filter=model_name)
-                    
                     try:
                         client.beta.threads.runs.submit_tool_outputs(
                             thread_id=thread_id,
                             run_id=run.id,
                             tool_outputs=[{"tool_call_id": tool_call.id, "output": f"Function executed. Found {len(car_data_result['cars'])} cars."}]
                         )
-                    except Exception as e:
-                        print(f"WARNING: Could not submit dummy tool output: {e}")
-                    
-                    # Return the response directly
+                    except Exception as e: print(f"WARNING: Could not submit dummy tool output: {e}")
                     return {
                         'statusCode': 200,
                         'headers': {'Content-Type': 'application/json'},
                         'body': json.dumps({"response": car_data_result['summary'], "cars": car_data_result['cars'], "thread_id": thread_id})
                     }
             time.sleep(1)
-
         if run.status == 'completed':
             messages = client.beta.threads.messages.list(thread_id=thread_id, order="desc", limit=1)
             response_text = messages.data[0].content[0].text.value
@@ -111,15 +98,14 @@ def handler(event, context):
             }
         else:
              return {
-                'statusCode': 200, # Still a valid response, just with an error message
+                'statusCode': 200,
                 'headers': {'Content-Type': 'application/json'},
                 'body': json.dumps({"response": f"Грешка: Обработката спря със статус '{run.status}'."})
             }
-
     except Exception as e:
         traceback.print_exc()
         return {
             'statusCode': 500,
             'headers': {'Content-Type': 'application/json'},
-            'body': json.dumps({"error": f"Възникна критична грешка на сървъра: {e}"})
+            'body': json.dumps({"error": f"Възникна критична грешка на сървъра: {str(e)}"})
         }

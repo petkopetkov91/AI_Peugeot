@@ -48,8 +48,8 @@ const CarCardDisplay: React.FC<{ cars: Car[], header: string }> = ({ cars, heade
   </div>
 );
 
-// The API endpoint for our Netlify function
-const API_CHAT_ENDPOINT = "/api/chat";
+// ПРОМЯНА: API URL вече е ДИРЕКТНИЯТ път към нашата Netlify функция
+const API_CHAT_ENDPOINT = "/.netlify/functions/chat";
 
 export default function ChatWindow() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -254,6 +254,7 @@ export default function ChatWindow() {
             </button>
           </div>
         </div>
-      </div>   
+      </div>
+  
   );
 }
