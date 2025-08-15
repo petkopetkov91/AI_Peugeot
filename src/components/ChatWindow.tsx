@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User, MessageSquare, Plus, Car, ExternalLink } from 'lucide-react';
+import { Send, Bot, User, Plus, Car, ExternalLink } from 'lucide-react';
 
-// НОВО: Дефинираме типове за колите и за съобщенията
+// Типове за данните
 interface Car {
   model: string;
   price: string;
@@ -17,7 +17,7 @@ interface Message {
   cars?: Car[];
 }
 
-// НОВО: Компонент за визуализация на картите с автомобили
+// Компонент за визуализация на картите с автомобили
 const CarCardDisplay: React.FC<{ cars: Car[], header: string }> = ({ cars, header }) => (
   <div className="w-full">
     <p className="text-sm leading-relaxed whitespace-pre-wrap mb-3">{header}</p>
@@ -48,7 +48,7 @@ const CarCardDisplay: React.FC<{ cars: Car[], header: string }> = ({ cars, heade
   </div>
 );
 
-// ПРОМЯНА: API URL вече е относителен път към нашата Netlify функция
+// API URL към нашата Netlify функция
 const API_CHAT_ENDPOINT = "/chat";
 
 export default function ChatWindow() {
@@ -56,16 +56,16 @@ export default function ChatWindow() {
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [threadId, setThreadId] = useState<string | null>(null);
-  const [currentSessionId, setCurrentSessionId] = useState(() => {
-    return localStorage.getItem('chatSessionId') || `session_${Date.now()}`;
-  });
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Ефект за зареждане на чата при стартиране
   useEffect(() => {
-    const savedThreadId = localStorage.getItem(`threadId_${currentSessionId}`);
-    setThreadId(savedThreadId);
+    const savedThreadId = localStorage.getItem('threadId');
+    if (savedThreadId) {
+        setThreadId(savedThreadId);
+    }
     
-    const savedMessages = localStorage.getItem(`chatHistory_${currentSessionId}`);
+    const savedMessages = localStorage.getItem('chatHistory');
     if (savedMessages) {
       const parsedMessages: Message[] = JSON.parse(savedMessages).map((msg: any) => ({
         ...msg,
@@ -81,17 +81,17 @@ export default function ChatWindow() {
       };
       setMessages([welcomeMessage]);
     }
-  }, [currentSessionId]);
+  }, []);
 
+  // Ефект за запазване на чата и скролиране
   useEffect(() => {
-    localStorage.setItem(`chatHistory_${currentSessionId}`, JSON.stringify(messages));
+    localStorage.setItem('chatHistory', JSON.stringify(messages));
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, currentSessionId]);
+  }, [messages]);
 
   const createNewChat = () => {
-    const newSessionId = `session_${Date.now()}`;
-    localStorage.setItem('chatSessionId', newSessionId);
-    setCurrentSessionId(newSessionId);
+    localStorage.removeItem('chatHistory');
+    localStorage.removeItem('threadId');
     setThreadId(null);
     setMessages([{
       id: '1',
@@ -134,7 +134,7 @@ export default function ChatWindow() {
       
       if (data.thread_id) {
         setThreadId(data.thread_id);
-        localStorage.setItem(`threadId_${currentSessionId}`, data.thread_id);
+        localStorage.setItem('threadId', data.thread_id);
       }
 
       const botMessage: Message = {
@@ -220,7 +220,9 @@ export default function ChatWindow() {
           {isLoading && (
             <div className="flex justify-start">
               <div className="flex items-start space-x-3">
-                <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center"> <Bot className="w-4 h-4 text-white" /> </div>
+                <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
+                    <Bot className="w-4 h-4 text-white" />
+                </div>
                 <div className="bg-white rounded-2xl rounded-bl-sm px-4 py-2 shadow-sm border">
                   <div className="flex space-x-1">
                     <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
