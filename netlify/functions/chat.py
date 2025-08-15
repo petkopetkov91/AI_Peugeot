@@ -7,11 +7,12 @@ import json
 import traceback
 import re
 
+# Променливите се зареждат от настройките на Netlify UI
 api_key = os.environ.get("OPENAI_API_KEY")
 assistant_id = os.environ.get("OPENAI_ASSISTANT_ID")
 
 if not api_key or not assistant_id:
-    raise ValueError("API keys must be set in Netlify's environment variables.")
+    raise ValueError("API ключовете трябва да са зададени в Netlify.")
 
 client = OpenAI(api_key=api_key)
 
@@ -27,8 +28,7 @@ def parse_price(price_str):
 
 def get_available_cars(model_filter=None):
     try:
-        # Reduced timeout to be safe within the 10s limit
-        response = requests.get("https://sale.peugeot.bg/ecommerce/fb/product_feed.xml", timeout=8)
+        response = requests.get("https://sale.peugeot.bg/ecommerce/fb/product_feed.xml", timeout=7) # Намален timeout
         response.raise_for_status()
         root = ET.fromstring(response.content)
         all_cars = []
@@ -46,21 +46,23 @@ def get_available_cars(model_filter=None):
         sorted_cars = sorted(filtered_cars, key=lambda x: x['numeric_price'])
         final_cars = sorted_cars[:4]
         if not final_cars:
-            summary = f"За съжаление, в момента няма налични автомобили, отговарящи на вашето търсене за '{model_filter}'." if model_filter else "За съжаление, в момента няма налични автомобили."
+            summary = f"За съжаление, в момента няма налични автомобили с филтър '{model_filter}'." if model_filter else "За съжаление, в момента няма налични автомобили."
             return {"summary": summary, "cars": []}
         summary = "Ето наличните автомобили, които отговарят на вашето търсене:"
         return {"summary": summary, "cars": final_cars}
     except requests.exceptions.Timeout:
-        return {"summary": "Сървърът на Peugeot не отговори навреме. Моля, опитайте отново по-късно.", "cars": []}
+        return {"summary": "Сървърът на Peugeot не отговори навреме. Моля, опитайте пак.", "cars": []}
     except Exception:
         traceback.print_exc()
-        return {"summary": "Възникна грешка при извличането на данните за автомобили.", "cars": []}
+        return {"summary": "Възникна грешка при извличането на данните.", "cars": []}
 
 def handler(event, context):
+    start_time = time.time()
+    
+    # Проверка за POST заявка
     if event['httpMethod'] != 'POST':
         return {'statusCode': 405, 'body': json.dumps({'error': 'Method Not Allowed'})}
     
-    start_time = time.time()
     try:
         body = json.loads(event['body'])
         thread_id = body.get("thread_id")
@@ -73,17 +75,15 @@ def handler(event, context):
         client.beta.threads.messages.create(thread_id=thread_id, role="user", content=user_message)
         run = client.beta.threads.runs.create(assistant_id=assistant_id, thread_id=thread_id)
         
-        car_data_to_return = None
-        
-        while run.status in ['queued', 'in_progress', 'requires_action']:
-            # Graceful timeout before Netlify kills the function
-            if time.time() - start_time > 9:
+        while True:
+            # Агресивна проверка за timeout
+            if time.time() - start_time > 9.5:
                 return {
-                    'statusCode': 504,
+                    'statusCode': 200, # Връщаме 200, за да не се счупи JSON парсърът
                     'headers': {'Content-Type': 'application/json'},
-                    'body': json.dumps({"error": "Заявката отне твърде дълго (Timeout). Моля, опитайте отново."})
+                    'body': json.dumps({"response": "Заявката отне твърде дълго. Моля, задайте въпроса си отново.", "thread_id": thread_id})
                 }
-            
+
             run = client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run.id)
             
             if run.status == 'requires_action':
@@ -91,39 +91,42 @@ def handler(event, context):
                 if tool_call.function.name == "get_available_cars":
                     arguments = json.loads(tool_call.function.arguments)
                     model_name = arguments.get('model_filter')
-                    car_data_to_return = get_available_cars(model_filter=model_name)
+                    car_data_result = get_available_cars(model_filter=model_name)
+                    
+                    # Потвърждаваме, за да не блокира чатът, но не чакаме
                     client.beta.threads.runs.submit_tool_outputs(
                         thread_id=thread_id, run_id=run.id,
-                        tool_outputs=[{"tool_call_id": tool_call.id, "output": "Function executed."}]
+                        tool_outputs=[{"tool_call_id": tool_call.id, "output": "Done."}]
                     )
-            time.sleep(0.5) # Faster polling
-            
-        if car_data_to_return:
-            return {
-                'statusCode': 200,
-                'headers': {'Content-Type': 'application/json'},
-                'body': json.dumps({"response": car_data_to_return['summary'], "cars": car_data_to_return['cars'], "thread_id": thread_id})
-            }
-        
-        if run.status == 'completed':
-            messages = client.beta.threads.messages.list(thread_id=thread_id, order="desc", limit=1)
-            response_text = messages.data[0].content[0].text.value if messages.data else "Получен е празен отговор."
-            return {
-                'statusCode': 200,
-                'headers': {'Content-Type': 'application/json'},
-                'body': json.dumps({"response": response_text, "thread_id": thread_id})
-            }
-        
-        return {
-            'statusCode': 500,
-            'headers': {'Content-Type': 'application/json'},
-            'body': json.dumps({"error": f"Run ended with status: {run.status}"})
-        }
+                    
+                    return {
+                        'statusCode': 200,
+                        'headers': {'Content-Type': 'application/json'},
+                        'body': json.dumps({"response": car_data_result['summary'], "cars": car_data_result['cars'], "thread_id": thread_id})
+                    }
+
+            if run.status == 'completed':
+                messages = client.beta.threads.messages.list(thread_id=thread_id, order="desc", limit=1)
+                response_text = messages.data[0].content[0].text.value if messages.data else "Получен е празен отговор."
+                return {
+                    'statusCode': 200,
+                    'headers': {'Content-Type': 'application/json'},
+                    'body': json.dumps({"response": response_text, "thread_id": thread_id})
+                }
+
+            if run.status in ['failed', 'cancelled', 'expired']:
+                return {
+                    'statusCode': 200,
+                    'headers': {'Content-Type': 'application/json'},
+                    'body': json.dumps({"response": f"Грешка: Обработката спря със статус '{run.status}'.", "thread_id": thread_id})
+                }
+
+            time.sleep(0.5)
 
     except Exception as e:
         traceback.print_exc()
         return {
             'statusCode': 500,
             'headers': {'Content-Type': 'application/json'},
-            'body': json.dumps({"error": f"A critical server error occurred: {str(e)}"})
+            'body': json.dumps({"error": f"Критична грешка на сървъра: {str(e)}"})
         }
