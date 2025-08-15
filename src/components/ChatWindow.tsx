@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, Bot, User, Plus, Car, ExternalLink } from 'lucide-react';
 
-// Типове за данните
+// Define the data structures for our app
 interface Car {
   model: string;
   price: string;
@@ -17,7 +17,7 @@ interface Message {
   cars?: Car[];
 }
 
-// Компонент за визуализация на картите с автомобили
+// A new component to display the car cards
 const CarCardDisplay: React.FC<{ cars: Car[], header: string }> = ({ cars, header }) => (
   <div className="w-full">
     <p className="text-sm leading-relaxed whitespace-pre-wrap mb-3">{header}</p>
@@ -48,7 +48,7 @@ const CarCardDisplay: React.FC<{ cars: Car[], header: string }> = ({ cars, heade
   </div>
 );
 
-// API URL към нашата Netlify функция
+// The API endpoint for our Netlify function
 const API_CHAT_ENDPOINT = "/chat";
 
 export default function ChatWindow() {
@@ -58,34 +58,42 @@ export default function ChatWindow() {
   const [threadId, setThreadId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Ефект за зареждане на чата при стартиране
+  // Load chat history and threadId from local storage when the app starts
   useEffect(() => {
-    const savedThreadId = localStorage.getItem('threadId');
-    if (savedThreadId) {
-        setThreadId(savedThreadId);
-    }
-    
-    const savedMessages = localStorage.getItem('chatHistory');
-    if (savedMessages) {
-      const parsedMessages: Message[] = JSON.parse(savedMessages).map((msg: any) => ({
-        ...msg,
-        timestamp: new Date(msg.timestamp)
-      }));
-      setMessages(parsedMessages);
-    } else {
-       const welcomeMessage: Message = {
-        id: '1',
-        text: 'Здравейте! Аз съм вашият Peugeot AI асистент. Попитайте ме за "налични автомобили" или за конкретен модел.',
-        isUser: false,
-        timestamp: new Date(),
-      };
-      setMessages([welcomeMessage]);
+    try {
+      const savedThreadId = localStorage.getItem('threadId');
+      if (savedThreadId) {
+          setThreadId(savedThreadId);
+      }
+      
+      const savedMessages = localStorage.getItem('chatHistory');
+      if (savedMessages) {
+        const parsedMessages: Message[] = JSON.parse(savedMessages).map((msg: any) => ({
+          ...msg,
+          timestamp: new Date(msg.timestamp)
+        }));
+        setMessages(parsedMessages);
+      } else {
+         const welcomeMessage: Message = {
+          id: '1',
+          text: 'Здравейте! Аз съм вашият Peugeot AI асистент. Попитайте ме за "налични автомобили" или за конкретен модел.',
+          isUser: false,
+          timestamp: new Date(),
+        };
+        setMessages([welcomeMessage]);
+      }
+    } catch (error) {
+      console.error("Failed to load from local storage:", error);
     }
   }, []);
 
-  // Ефект за запазване на чата и скролиране
+  // Save chat history and scroll to the bottom when messages change
   useEffect(() => {
-    localStorage.setItem('chatHistory', JSON.stringify(messages));
+    try {
+      localStorage.setItem('chatHistory', JSON.stringify(messages));
+    } catch (error) {
+      console.error("Failed to save to local storage:", error);
+    }
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
@@ -125,12 +133,10 @@ export default function ChatWindow() {
         }),
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || `HTTP error! Status: ${response.status}`);
-      }
-
       const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || `HTTP error! Status: ${response.status}`);
+      }
       
       if (data.thread_id) {
         setThreadId(data.thread_id);
