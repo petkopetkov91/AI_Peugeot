@@ -62,32 +62,47 @@ def handler(event, context):
         body = json.loads(event['body'])
         thread_id = body.get("thread_id")
         user_message = body.get("message")
+        
         if not thread_id:
             thread = client.beta.threads.create()
             thread_id = thread.id
+            
         client.beta.threads.messages.create(thread_id=thread_id, role="user", content=user_message)
         run = client.beta.threads.runs.create(assistant_id=assistant_id, thread_id=thread_id)
+        
+        car_data_to_return = None
+        
         while run.status in ['queued', 'in_progress', 'requires_action']:
             run = client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run.id)
+            
             if run.status == 'requires_action':
                 tool_call = run.required_action.submit_tool_outputs.tool_calls[0]
                 if tool_call.function.name == "get_available_cars":
                     arguments = json.loads(tool_call.function.arguments)
                     model_name = arguments.get('model_filter')
-                    car_data_result = get_available_cars(model_filter=model_name)
-                    try:
-                        client.beta.threads.runs.submit_tool_outputs(
-                            thread_id=thread_id,
-                            run_id=run.id,
-                            tool_outputs=[{"tool_call_id": tool_call.id, "output": f"Function executed. Found {len(car_data_result['cars'])} cars."}]
-                        )
-                    except Exception as e: print(f"WARNING: Could not submit dummy tool output: {e}")
-                    return {
-                        'statusCode': 200,
-                        'headers': {'Content-Type': 'application/json'},
-                        'body': json.dumps({"response": car_data_result['summary'], "cars": car_data_result['cars'], "thread_id": thread_id})
-                    }
+                    
+                    # 1. Get car data and store it
+                    car_data_to_return = get_available_cars(model_filter=model_name)
+                    
+                    # 2. Submit a confirmation to let the run complete
+                    client.beta.threads.runs.submit_tool_outputs(
+                        thread_id=thread_id,
+                        run_id=run.id,
+                        tool_outputs=[{"tool_call_id": tool_call.id, "output": "Function executed."}]
+                    )
             time.sleep(1)
+            
+        # After the loop, the run is complete
+        
+        # If we have car data from the function call, we return it directly
+        if car_data_to_return:
+            return {
+                'statusCode': 200,
+                'headers': {'Content-Type': 'application/json'},
+                'body': json.dumps({"response": car_data_to_return['summary'], "cars": car_data_to_return['cars'], "thread_id": thread_id})
+            }
+        
+        # Otherwise (for general queries), we return the assistant's message
         if run.status == 'completed':
             messages = client.beta.threads.messages.list(thread_id=thread_id, order="desc", limit=1)
             response_text = messages.data[0].content[0].text.value
@@ -96,16 +111,18 @@ def handler(event, context):
                 'headers': {'Content-Type': 'application/json'},
                 'body': json.dumps({"response": response_text, "thread_id": thread_id})
             }
-        else:
-             return {
-                'statusCode': 200,
-                'headers': {'Content-Type': 'application/json'},
-                'body': json.dumps({"response": f"Грешка: Обработката спря със статус '{run.status}'."})
-            }
+        
+        # Fallback for any other failed status
+        return {
+            'statusCode': 500,
+            'headers': {'Content-Type': 'application/json'},
+            'body': json.dumps({"error": f"Run ended with status: {run.status}"})
+        }
+
     except Exception as e:
         traceback.print_exc()
         return {
             'statusCode': 500,
             'headers': {'Content-Type': 'application/json'},
-            'body': json.dumps({"error": f"Възникна критична грешка на сървъра: {str(e)}"})
+            'body': json.dumps({"error": f"A critical server error occurred: {str(e)}"})
         }
