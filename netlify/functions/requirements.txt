@@ -1,5 +1,2 @@
-flask
 openai
 requests
-flask-cors
-serverless-wsgi
