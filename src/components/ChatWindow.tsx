@@ -254,7 +254,6 @@ export default function ChatWindow() {
             </button>
           </div>
         </div>
-      </div>
-    </div>
+      </div>   
   );
 }
