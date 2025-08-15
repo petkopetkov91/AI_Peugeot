@@ -4,6 +4,6 @@
   functions = "netlify/functions"
 
 [[redirects]]
-  from = "/chat"
-  to = "/.netlify/functions/api/chat"
+  from = "/api/*"
+  to = "/.netlify/functions/api/:splat"
   status = 200

@@ -49,7 +49,7 @@ const CarCardDisplay: React.FC<{ cars: Car[], header: string }> = ({ cars, heade
 );
 
 // The API endpoint for our Netlify function
-const API_CHAT_ENDPOINT = "/chat";
+const API_CHAT_ENDPOINT = "/api/chat";
 
 export default function ChatWindow() {
   const [messages, setMessages] = useState<Message[]>([]);
