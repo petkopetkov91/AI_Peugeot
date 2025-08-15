@@ -1,6 +1,5 @@
 flask
 openai
-python-dotenv
 requests
 flask-cors
 serverless-wsgi
